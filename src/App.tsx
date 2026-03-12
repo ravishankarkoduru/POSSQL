@@ -28,10 +28,13 @@ import {
   AlertTriangle,
   ChevronRight,
   TrendingDown,
+  Users,
+  UserPlus,
+  Shield,
   Image as ImageIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { localDb, type Transaction, type Product } from './db';
+import { localDb, type Transaction, type Product, type Employee, type Role } from './db';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { syncData, startAutoSync } from './services/syncService';
 import { format, startOfDay, isSameDay } from 'date-fns';
@@ -39,12 +42,12 @@ import { format, startOfDay, isSameDay } from 'date-fns';
 // --- Constants ---
 
 const NOODLE_ITEMS = [
-  { id: 'n1', name: 'Batchoy', cost: 45.00, price: 60.00, category: 'Noodles', image: 'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?q=30&w=200&h=200&auto=format&fit=crop', stock: 97, lowStock: 10, isExpired: true, barcode: '123456789', expiryDate: '2026-03-31' },
-  { id: 'n2', name: 'C2', cost: 15.00, price: 20.00, category: 'Drinks', image: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?q=30&w=200&h=200&auto=format&fit=crop', stock: 44, lowStock: 5, isExpired: false, barcode: '987654321', expiryDate: '2026-12-31' },
-  { id: 'n3', name: 'Cheese', cost: 7.00, price: 10.00, category: 'Add-ons', image: 'https://images.unsplash.com/photo-1528283753224-3a248ad889af?q=30&w=200&h=200&auto=format&fit=crop', stock: 12, lowStock: 2, isExpired: false, barcode: '456789123', expiryDate: '2026-06-15' },
-  { id: 'n4', name: 'CHEESE ramen', cost: 100.00, price: 130.00, category: 'Ramen', image: 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?q=30&w=200&h=200&auto=format&fit=crop', stock: 9, lowStock: 5, isExpired: true, barcode: '321654987', expiryDate: '2026-03-25' },
-  { id: 'n5', name: 'Stir-Fry', cost: 65.00, price: 85.00, category: 'Noodles', image: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?q=30&w=200&h=200&auto=format&fit=crop', stock: 25, lowStock: 10, isExpired: false, barcode: '789123456', expiryDate: '2026-08-20' },
-  { id: 'n6', name: 'Hotdog', cost: 25.00, price: 35.00, category: 'Add-ons', image: 'https://images.unsplash.com/photo-1541214113241-21578d2d9b62?q=30&w=200&h=200&auto=format&fit=crop', stock: 18, lowStock: 5, isExpired: false, barcode: '654321789', expiryDate: '2026-05-10' },
+  { id: 'n1', name: 'Batchoy', cost: 45.00, price: 60.00, category: 'Noodles', image: 'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?q=30&w=200&h=200&auto=format&fit=crop', stock: 97, lowStock: 10, isExpired: true, barcode: '123456789', expiryDate: '2026-03-31', isActive: true },
+  { id: 'n2', name: 'C2', cost: 15.00, price: 20.00, category: 'Drinks', image: 'https://images.unsplash.com/photo-1544145945-f904253d0c7b?q=30&w=200&h=200&auto=format&fit=crop', stock: 44, lowStock: 5, isExpired: false, barcode: '987654321', expiryDate: '2026-12-31', isActive: true },
+  { id: 'n3', name: 'Cheese', cost: 7.00, price: 10.00, category: 'Add-ons', image: 'https://images.unsplash.com/photo-1528283753224-3a248ad889af?q=30&w=200&h=200&auto=format&fit=crop', stock: 12, lowStock: 2, isExpired: false, barcode: '456789123', expiryDate: '2026-06-15', isActive: true },
+  { id: 'n4', name: 'CHEESE ramen', cost: 100.00, price: 130.00, category: 'Ramen', image: 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?q=30&w=200&h=200&auto=format&fit=crop', stock: 9, lowStock: 5, isExpired: true, barcode: '321654987', expiryDate: '2026-03-25', isActive: true },
+  { id: 'n5', name: 'Stir-Fry', cost: 65.00, price: 85.00, category: 'Noodles', image: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?q=30&w=200&h=200&auto=format&fit=crop', stock: 25, lowStock: 10, isExpired: false, barcode: '789123456', expiryDate: '2026-08-20', isActive: true },
+  { id: 'n6', name: 'Hotdog', cost: 25.00, price: 35.00, category: 'Add-ons', image: 'https://images.unsplash.com/photo-1541214113241-21578d2d9b62?q=30&w=200&h=200&auto=format&fit=crop', stock: 18, lowStock: 5, isExpired: false, barcode: '654321789', expiryDate: '2026-05-10', isActive: true },
 ];
 
 // --- Components ---
@@ -89,23 +92,26 @@ const SummaryCard = ({ title, value, subtitle, icon: Icon, gradient, bgIcon: BgI
 
 // --- Login Component ---
 
-const Login = ({ onLogin }: { onLogin: () => void }) => {
+const Login = ({ onLogin }: { onLogin: (user: Employee) => void }) => {
   const [pin, setPin] = useState('');
-  const [storedPin, setStoredPin] = useState<string | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
+  const [isCreatingFirstAdmin, setIsCreatingFirstAdmin] = useState(false);
+  const [adminName, setAdminName] = useState('Admin');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Force set PIN to 000000 as per user request
-    localStorage.setItem('pos_pin', '000000');
-    setStoredPin('000000');
-    setIsCreating(false);
+    const checkEmployees = async () => {
+      const count = await localDb.employees.count();
+      if (count === 0) {
+        setIsCreatingFirstAdmin(true);
+      }
+    };
+    checkEmployees();
   }, []);
 
   const handleNumberClick = (num: string) => {
     setError('');
-    if (isCreating) {
+    if (isCreatingFirstAdmin) {
       if (pin.length < 6) setPin(prev => prev + num);
       else if (confirmPin.length < 6) setConfirmPin(prev => prev + num);
     } else {
@@ -114,7 +120,7 @@ const Login = ({ onLogin }: { onLogin: () => void }) => {
   };
 
   const handleBackspace = () => {
-    if (isCreating) {
+    if (isCreatingFirstAdmin) {
       if (confirmPin.length > 0) setConfirmPin(prev => prev.slice(0, -1));
       else setPin(prev => prev.slice(0, -1));
     } else {
@@ -128,8 +134,8 @@ const Login = ({ onLogin }: { onLogin: () => void }) => {
     setError('');
   };
 
-  const handleSubmit = () => {
-    if (isCreating) {
+  const handleSubmit = async () => {
+    if (isCreatingFirstAdmin) {
       if (pin.length !== 6 || confirmPin.length !== 6) {
         setError('PIN must be 6 digits');
         return;
@@ -140,13 +146,26 @@ const Login = ({ onLogin }: { onLogin: () => void }) => {
         setConfirmPin('');
         return;
       }
-      localStorage.setItem('pos_pin', pin);
-      localStorage.setItem('pos_user', 'admin');
-      onLogin();
+      
+      const firstAdmin: Employee = {
+        id: crypto.randomUUID(),
+        name: 'Admin',
+        role: 'Admin',
+        pin: pin,
+        createdAt: new Date().toISOString()
+      };
+      
+      await localDb.employees.add(firstAdmin);
+      localStorage.setItem('pos_user_id', firstAdmin.id);
+      onLogin(firstAdmin);
     } else {
-      if (pin === storedPin) {
-        localStorage.setItem('pos_user', 'admin');
-        onLogin();
+      // Use toArray().find() for more robust matching in case of index issues
+      const allEmployees = await localDb.employees.toArray();
+      const employee = allEmployees.find(e => e.pin === pin);
+      
+      if (employee) {
+        localStorage.setItem('pos_user_id', employee.id);
+        onLogin(employee);
       } else {
         setError('Incorrect PIN');
         setPin('');
@@ -155,13 +174,32 @@ const Login = ({ onLogin }: { onLogin: () => void }) => {
   };
 
   useEffect(() => {
-    if (!isCreating && pin.length === 6) {
+    if (!isCreatingFirstAdmin && pin.length === 6) {
       handleSubmit();
     }
-    if (isCreating && pin.length === 6 && confirmPin.length === 6) {
+    if (isCreatingFirstAdmin && pin.length === 6 && confirmPin.length === 6) {
       handleSubmit();
     }
   }, [pin, confirmPin]);
+
+  const handleResetAdminPin = async () => {
+    try {
+      const admins = await localDb.employees.where('role').equals('Admin').toArray();
+      if (admins.length > 0) {
+        // Reset all admins to be safe
+        for (const admin of admins) {
+          await localDb.employees.update(admin.id, { pin: '000000' });
+        }
+        setError('Admin PIN(s) reset to 000000');
+        setPin('');
+      } else {
+        setError('No Admin account found');
+      }
+    } catch (err) {
+      setError('Failed to reset PIN');
+      console.error(err);
+    }
+  };
 
   const PinBoxes = ({ value }: { value: string }) => (
     <div className="flex justify-center space-x-2 my-10">
@@ -171,16 +209,16 @@ const Login = ({ onLogin }: { onLogin: () => void }) => {
         return (
           <div 
             key={i} 
-            className={`w-12 h-16 rounded-none border-2 flex items-center justify-center transition-all duration-200 ${
+            className={`w-10 h-10 rounded-none border flex items-center justify-center transition-all duration-200 ${
               isActive 
                 ? 'border-indigo-500 bg-indigo-500/10' 
-                : 'border-slate-800 bg-slate-800/50'
+                : 'border-slate-800 bg-slate-800/30'
             }`}
           >
             {isFilled && (
-              <div className="w-2 h-2 rounded-full bg-slate-400" />
+              <div className="w-2 h-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
             )}
-            {!isFilled && !isActive && (
+            {!isFilled && (
               <div className="w-1 h-1 rounded-full bg-slate-700" />
             )}
           </div>
@@ -201,23 +239,25 @@ const Login = ({ onLogin }: { onLogin: () => void }) => {
             Korean Ramen
           </h1>
           <p className="text-slate-400 text-sm font-medium">
-            {isCreating 
+            {isCreatingFirstAdmin 
               ? (pin.length < 6 ? 'Create your 6-digit PIN' : 'Confirm your 6-digit PIN')
               : 'Enter PIN to start shift'}
           </p>
         </div>
 
+        {/* Removed Admin Name input as per request */}
+
         {error && (
           <motion.p 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="text-red-400 text-center text-sm font-bold mb-4"
+            className={`text-center text-sm font-bold mb-4 ${error.includes('reset') ? 'text-emerald-400' : 'text-red-400'}`}
           >
             {error}
           </motion.p>
         )}
 
-        <PinBoxes value={isCreating && pin.length === 6 ? confirmPin : pin} />
+        <PinBoxes value={isCreatingFirstAdmin && pin.length === 6 ? confirmPin : pin} />
 
         <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
@@ -250,6 +290,17 @@ const Login = ({ onLogin }: { onLogin: () => void }) => {
             </svg>
           </button>
         </div>
+
+        {!isCreatingFirstAdmin && (
+          <div className="mt-8 text-center">
+            <button
+              onClick={handleResetAdminPin}
+              className="text-slate-500 hover:text-emerald-400 text-[10px] font-black uppercase tracking-[0.2em] transition-colors"
+            >
+              Reset Admin PIN to 000000
+            </button>
+          </div>
+        )}
       </motion.div>
     </div>
   );
@@ -258,11 +309,19 @@ const Login = ({ onLogin }: { onLogin: () => void }) => {
 // --- Main App ---
 
 export default function App() {
-  const [view, setView] = useState<'dashboard' | 'pos' | 'history' | 'products'>('pos');
+  const [view, setView] = useState<'dashboard' | 'pos' | 'history' | 'products' | 'employees'>('pos');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(true);
+  const [currentUser, setCurrentUser] = useState<Employee | null>({
+    id: 'admin-1',
+    name: 'Admin',
+    role: 'Admin',
+    pin: '000000',
+    createdAt: new Date().toISOString()
+  });
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const isOnline = useOnlineStatus();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -284,17 +343,94 @@ export default function App() {
     stock: 0,
     lowStock: 5,
     barcode: '',
-    expiryDate: format(new Date(), 'yyyy-MM-dd')
+    expiryDate: format(new Date(), 'yyyy-MM-dd'),
+    isActive: true
   });
 
+  // Employee Modal State
+  const [isAddEmployeeModalOpen, setIsAddEmployeeModalOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [newEmployee, setNewEmployee] = useState({
+    name: '',
+    role: 'Cashier' as Role,
+    pin: ''
+  });
+
+  // Transaction Details State
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [isTransactionDetailsModalOpen, setIsTransactionDetailsModalOpen] = useState(false);
+  const [historyStartDate, setHistoryStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-dd'));
+  const [historyEndDate, setHistoryEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+
+  const groupedTransactions = useMemo(() => {
+    const groups: { [key: string]: Transaction[] } = {};
+    
+    // Filter transactions by date range first
+    const filteredTransactions = transactions.filter(t => {
+      const tDate = new Date(t.timestamp);
+      const start = new Date(historyStartDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(historyEndDate);
+      end.setHours(23, 59, 59, 999);
+      return tDate >= start && tDate <= end;
+    });
+
+    filteredTransactions.forEach(t => {
+      const sid = t.session_id || t.id;
+      if (!groups[sid]) {
+        groups[sid] = [];
+      }
+      groups[sid].push(t);
+    });
+    
+    return Object.entries(groups).map(([sessionId, items]) => {
+      const firstItem = items[0];
+      const total = items.reduce((sum, item) => sum + item.total, 0);
+      return {
+        sessionId,
+        timestamp: firstItem.timestamp,
+        total,
+        items,
+        user_id: firstItem.user_id
+      };
+    }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [transactions, historyStartDate, historyEndDate]);
+
   useEffect(() => {
-    const user = localStorage.getItem('pos_user');
-    if (user) setIsLoggedIn(true);
+    const userId = localStorage.getItem('pos_user_id');
+    if (userId) {
+      localDb.employees.get(userId).then(user => {
+        if (user) {
+          setCurrentUser(user);
+          setIsLoggedIn(true);
+        }
+      });
+    } else {
+      // Ensure the default admin exists in the database
+      const defaultAdmin: Employee = {
+        id: 'admin-1',
+        name: 'Admin',
+        role: 'Admin',
+        pin: '000000',
+        createdAt: new Date().toISOString()
+      };
+      localDb.employees.get('admin-1').then(existing => {
+        if (!existing) {
+          localDb.employees.add(defaultAdmin);
+        }
+      });
+    }
     
     loadTransactions();
     loadProducts();
+    loadEmployees();
     startAutoSync();
   }, []);
+
+  const loadEmployees = async () => {
+    const data = await localDb.employees.toArray();
+    setEmployees(data);
+  };
 
   const loadProducts = async () => {
     let data = await localDb.products.toArray();
@@ -339,8 +475,42 @@ export default function App() {
       stock: 0,
       lowStock: 5,
       barcode: '',
-      expiryDate: format(new Date(), 'yyyy-MM-dd')
+      expiryDate: format(new Date(), 'yyyy-MM-dd'),
+      isActive: true
     });
+  };
+
+  const handleAddEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingEmployee) {
+      const updatedEmployee: Employee = {
+        ...editingEmployee,
+        ...newEmployee,
+      };
+      await localDb.employees.put(updatedEmployee);
+    } else {
+      const employee: Employee = {
+        ...newEmployee,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString()
+      };
+      await localDb.employees.add(employee);
+    }
+    await loadEmployees();
+    setIsAddEmployeeModalOpen(false);
+    setEditingEmployee(null);
+    setNewEmployee({
+      name: '',
+      role: 'Cashier',
+      pin: ''
+    });
+  };
+
+  const handleDeleteEmployee = async (id: string) => {
+    if (confirm('Are you sure you want to delete this employee?')) {
+      await localDb.employees.delete(id);
+      await loadEmployees();
+    }
   };
 
   const openEditModal = (product: Product) => {
@@ -354,7 +524,8 @@ export default function App() {
       stock: product.stock,
       lowStock: product.lowStock || 5,
       barcode: product.barcode || '',
-      expiryDate: product.expiryDate || format(new Date(), 'yyyy-MM-dd')
+      expiryDate: product.expiryDate || format(new Date(), 'yyyy-MM-dd'),
+      isActive: product.isActive !== undefined ? product.isActive : true
     });
     setIsAddProductModalOpen(true);
   };
@@ -385,9 +556,11 @@ export default function App() {
   };
 
   const addToCart = (item: Product) => {
+    if (item.stock <= 0) return;
     setCart(prev => {
       const existing = prev.find(c => c.item.id === item.id);
       if (existing) {
+        if (existing.quantity >= item.stock) return prev;
         return prev.map(c => c.item.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
       }
       return [...prev, { item, quantity: 1 }];
@@ -401,7 +574,9 @@ export default function App() {
   const updateCartQuantity = (itemId: string, delta: number) => {
     setCart(prev => prev.map(c => {
       if (c.item.id === itemId) {
-        const newQty = Math.max(1, c.quantity + delta);
+        const product = products.find(p => p.id === itemId);
+        const maxStock = product ? product.stock : Infinity;
+        const newQty = Math.max(1, Math.min(maxStock, c.quantity + delta));
         return { ...c, quantity: newQty };
       }
       return c;
@@ -413,24 +588,50 @@ export default function App() {
   const confirmCheckout = async () => {
     if (cart.length === 0) return;
     
+    const sessionId = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    
     const newTransactions: Transaction[] = cart.map(c => ({
       id: crypto.randomUUID(),
+      session_id: sessionId,
       item_name: c.item.name,
       quantity: c.quantity,
       price: c.item.price,
       total: c.item.price * c.quantity,
-      timestamp: new Date().toISOString(),
-      user_id: '1',
+      timestamp: timestamp,
+      user_id: currentUser?.id || '1',
       synced: 0
     }));
 
     await localDb.transactions.bulkAdd(newTransactions);
+
+    // Update stock counts
+    for (const cartItem of cart) {
+      const product = await localDb.products.get(cartItem.item.id);
+      if (product) {
+        await localDb.products.update(cartItem.item.id, {
+          stock: Math.max(0, product.stock - cartItem.quantity)
+        });
+      }
+    }
+
     setCart([]);
     setIsCartOpen(false);
     setCheckoutSuccess(true);
     setTimeout(() => setCheckoutSuccess(false), 3000);
-    loadTransactions();
+    await loadProducts();
+    await loadTransactions();
     syncData();
+  };
+
+  const handleRestock = async (productId: string, amount: number) => {
+    const product = await localDb.products.get(productId);
+    if (product) {
+      await localDb.products.update(productId, {
+        stock: product.stock + amount
+      });
+      await loadProducts();
+    }
   };
 
   const todaySales = useMemo(() => {
@@ -443,7 +644,10 @@ export default function App() {
   const totalTransactions = transactions.length;
 
   if (!isLoggedIn) {
-    return <Login onLogin={() => setIsLoggedIn(true)} />;
+    return <Login onLogin={(user) => {
+      setCurrentUser(user);
+      setIsLoggedIn(true);
+    }} />;
   }
 
   return (
@@ -503,20 +707,44 @@ export default function App() {
               isDark={true}
               onClick={() => { setView('history'); setIsSidebarOpen(false); }} 
             />
+            {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
+              <SidebarItem 
+                icon={Users} 
+                label="Employees" 
+                active={view === 'employees'} 
+                isDark={true}
+                onClick={() => { setView('employees'); setIsSidebarOpen(false); }} 
+              />
+            )}
           </nav>
 
-          <div className="mt-auto pt-6 border-t border-slate-800 flex items-center justify-between">
-            <button 
-              onClick={() => { localStorage.removeItem('pos_user'); setIsLoggedIn(false); }}
-              className="flex items-center space-x-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-500/10 transition-colors"
-            >
-              <LogOut size={20} />
-              <span className="font-medium">Logout</span>
-            </button>
-            <div className={`flex items-center justify-center w-10 h-10 rounded-none ${
-              isOnline ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'
-            }`}>
-              {isOnline ? <Wifi size={18} className="animate-pulse" /> : <WifiOff size={18} />}
+          <div className="mt-auto pt-6 border-t border-slate-800">
+            <div className="flex items-center space-x-3 px-2 mb-6">
+              <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-emerald-500 font-bold border border-slate-700">
+                {currentUser?.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-white font-bold truncate text-sm">{currentUser?.name}</span>
+                <span className="text-slate-500 text-xs font-medium">{currentUser?.role}</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <button 
+                onClick={() => {
+                  localStorage.removeItem('pos_user_id');
+                  setIsLoggedIn(false);
+                  setCurrentUser(null);
+                }}
+                className="flex items-center space-x-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-500/10 transition-colors"
+              >
+                <LogOut size={20} />
+                <span className="font-medium">Logout</span>
+              </button>
+              <div className={`flex items-center justify-center w-10 h-10 rounded-none ${
+                isOnline ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'
+              }`}>
+                {isOnline ? <Wifi size={18} className="animate-pulse" /> : <WifiOff size={18} />}
+              </div>
             </div>
           </div>
         </div>
@@ -532,7 +760,7 @@ export default function App() {
             </button>
             <div className="flex flex-col">
               <h2 className="text-xl font-black leading-tight text-emerald-500">
-                {view === 'pos' ? 'POS' : view === 'dashboard' ? 'Dashboard' : view === 'products' ? 'Products' : 'History'}
+                {view === 'pos' ? 'POS' : view === 'dashboard' ? 'Dashboard' : view === 'products' ? 'Products' : view === 'employees' ? 'Employees' : 'History'}
               </h2>
               {view === 'pos' && <span className="text-xs text-slate-500 font-medium">Point of Sale</span>}
             </div>
@@ -565,10 +793,12 @@ export default function App() {
                     setEditingProduct(null);
                     setNewProduct({
                       name: '',
+                      cost: 0,
                       price: 0,
                       category: 'Noodles',
                       image: 'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?q=30&w=200&h=200&auto=format&fit=crop',
                       stock: 0,
+                      lowStock: 5,
                       barcode: '',
                       expiryDate: format(new Date(), 'yyyy-MM-dd')
                     });
@@ -579,6 +809,23 @@ export default function App() {
                   <Plus size={20} />
                 </button>
               </div>
+            )}
+
+            {view === 'employees' && (
+              <button 
+                onClick={() => {
+                  setEditingEmployee(null);
+                  setNewEmployee({
+                    name: '',
+                    role: 'Cashier',
+                    pin: ''
+                  });
+                  setIsAddEmployeeModalOpen(true);
+                }}
+                className="p-2 bg-emerald-600 text-white rounded-none hover:bg-emerald-700 shadow-lg shadow-emerald-900/20"
+              >
+                <UserPlus size={20} />
+              </button>
             )}
 
             {view === 'dashboard' && (
@@ -624,15 +871,16 @@ export default function App() {
                 {/* Items Grid */}
                 <div className="flex-1">
                   <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-[6px]">
-                    {products.map((item) => (
+                    {products.filter(p => p.isActive !== false).map((item) => (
                       <motion.button
                         key={item.id}
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
+                        disabled={item.stock <= 0}
                         onClick={() => addToCart(item)}
-                        className="bg-[#1E293B] rounded-none overflow-hidden border border-slate-800 shadow-sm hover:shadow-md transition-all text-left flex flex-col"
+                        className={`bg-[#1E293B] rounded-none overflow-hidden border border-slate-800 shadow-sm hover:shadow-md transition-all text-left flex flex-col ${item.stock <= 0 ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
                       >
-                        <div className="aspect-square overflow-hidden bg-slate-800">
+                        <div className="aspect-square relative overflow-hidden bg-slate-800">
                           <img 
                             src={item.image} 
                             alt={item.name} 
@@ -641,6 +889,16 @@ export default function App() {
                             className="w-full h-full object-cover"
                             referrerPolicy="no-referrer"
                           />
+                          {item.stock <= 0 && (
+                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                              <span className="text-white font-black text-xs uppercase tracking-widest border-2 border-white px-2 py-1 rotate-[-12deg]">Out of Stock</span>
+                            </div>
+                          )}
+                          {item.stock > 0 && item.stock <= (item.lowStock || 5) && (
+                            <div className="absolute top-2 right-2 bg-rose-600 text-white text-[10px] font-black px-2 py-1 uppercase tracking-tighter shadow-lg">
+                              Low Stock
+                            </div>
+                          )}
                         </div>
                         <div className="p-1 flex flex-col">
                           <h4 className="font-bold text-white text-xs line-clamp-1">{item.name}</h4>
@@ -648,7 +906,7 @@ export default function App() {
                             <p className="text-white font-bold text-sm">₱{item.price.toFixed(2)}</p>
                             <div className="flex items-center gap-2">
                               {item.isExpired && <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Expired</span>}
-                              <span className="text-emerald-500 font-bold text-xs">{item.stock}</span>
+                              <span className={`font-bold text-xs ${item.stock <= (item.lowStock || 5) ? 'text-rose-500' : 'text-emerald-500'}`}>{item.stock}</span>
                             </div>
                           </div>
                         </div>
@@ -711,8 +969,23 @@ export default function App() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between mb-0">
-                          <h4 className="text-white text-sm truncate">{item.name}</h4>
+                          <h4 className="text-white text-sm truncate flex items-center gap-2">
+                            {item.name}
+                            {item.isActive === false && (
+                              <span className="text-[8px] font-black bg-slate-700 text-slate-400 px-1 py-0.5 uppercase tracking-tighter">Inactive</span>
+                            )}
+                          </h4>
                           <div className="flex items-center gap-0">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRestock(item.id, 10);
+                              }}
+                              className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-none transition-all"
+                              title="Restock +10"
+                            >
+                              <PlusCircle size={14} />
+                            </button>
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -834,9 +1107,28 @@ export default function App() {
 
                 {/* Low Stock */}
                 <div className="bg-slate-900/50 border border-slate-800 rounded-none p-8">
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-3 mb-8">
                     <TrendingDown className="text-rose-500" size={28} />
                     <h3 className="text-2xl font-bold text-white">Low Stock</h3>
+                  </div>
+                  <div className="space-y-6">
+                    {products.filter(p => p.stock <= (p.lowStock || 5)).map((item) => (
+                      <div key={item.id} className="flex items-center justify-between group">
+                        <div>
+                          <h4 className="text-white font-bold text-lg mb-1">{item.name}</h4>
+                          <p className="text-rose-500 text-sm font-bold">{item.stock} left</p>
+                        </div>
+                        <button 
+                          onClick={() => handleRestock(item.id, 50)}
+                          className="bg-emerald-500/10 text-emerald-500 px-4 py-2 rounded-none text-sm font-bold hover:bg-emerald-500 hover:text-white transition-all"
+                        >
+                          Restock +50
+                        </button>
+                      </div>
+                    ))}
+                    {products.filter(p => p.stock <= (p.lowStock || 5)).length === 0 && (
+                      <p className="text-slate-500 italic">All items well stocked</p>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -848,48 +1140,116 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
+                className="max-w-4xl mx-auto font-mono"
               >
                 <div className="bg-slate-900/50 rounded-none border border-slate-800 overflow-hidden shadow-sm">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-800/50 border-b border-slate-800">
-                        <tr>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Item</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Qty</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Price</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Total</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Sync</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800">
-                        {transactions.map((t) => (
-                          <tr key={t.id} className="hover:bg-slate-800/30 transition-colors">
-                            <td className="px-6 py-4 text-sm text-slate-400">{format(new Date(t.timestamp), 'MMM d, HH:mm')}</td>
-                            <td className="px-6 py-4 font-bold text-white">{t.item_name}</td>
-                            <td className="px-6 py-4 text-sm text-slate-400">{t.quantity}</td>
-                            <td className="px-6 py-4 text-sm text-slate-400">₱{t.price.toFixed(2)}</td>
-                            <td className="px-6 py-4 font-bold text-emerald-500">₱{t.total.toFixed(2)}</td>
-                            <td className="px-6 py-4">
-                              {t.synced ? (
-                                <div className="text-emerald-500 bg-emerald-500/10 w-6 h-6 rounded-full flex items-center justify-center">
-                                  <Wifi size={12} />
-                                </div>
-                              ) : (
-                                <div className="text-slate-600 bg-slate-800 w-6 h-6 rounded-full flex items-center justify-center">
-                                  <RefreshCw size={12} />
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {transactions.length === 0 && (
-                      <div className="p-20 text-center text-slate-600 italic">No transaction history found</div>
+                  <div className="px-4 py-3 text-sm font-bold text-white border-b border-slate-800 bg-slate-800/50 uppercase tracking-widest flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <span>Transaction History</span>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="date" 
+                        value={historyStartDate}
+                        onChange={(e) => setHistoryStartDate(e.target.value)}
+                        className="bg-slate-900 border border-slate-700 text-[10px] px-2 py-1 focus:outline-none focus:border-emerald-500"
+                      />
+                      <span className="text-slate-500 text-[10px]">to</span>
+                      <input 
+                        type="date" 
+                        value={historyEndDate}
+                        onChange={(e) => setHistoryEndDate(e.target.value)}
+                        className="bg-slate-900 border border-slate-700 text-[10px] px-2 py-1 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="divide-y divide-slate-800/30">
+                    {groupedTransactions.map((group) => (
+                      <button 
+                        key={group.sessionId} 
+                        onClick={() => {
+                          setSelectedSessionId(group.sessionId);
+                          setIsTransactionDetailsModalOpen(true);
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-emerald-500/10 transition-colors group flex items-center justify-between"
+                      >
+                        <div className="text-sm text-white font-mono">
+                          trn-{format(new Date(group.timestamp), 'dd/MM/yy HH:mm')} ₱{group.total.toFixed(2)}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] text-slate-500 uppercase tracking-tighter group-hover:text-emerald-400 transition-colors">
+                            {group.items.length} {group.items.length === 1 ? 'item' : 'items'}
+                          </span>
+                          <ChevronRight size={14} className="text-slate-700 group-hover:text-emerald-500 transition-colors" />
+                        </div>
+                      </button>
+                    ))}
+                    {groupedTransactions.length === 0 && (
+                      <div className="p-10 text-center text-slate-600 italic text-sm">No transaction history found</div>
                     )}
                   </div>
                 </div>
+              </motion.div>
+            )}
+
+            {view === 'employees' && (
+              <motion.div 
+                key="employees"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="max-w-6xl mx-auto"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {employees.map((emp) => (
+                    <div key={emp.id} className="bg-slate-900/50 border border-slate-800 p-6 flex flex-col group hover:border-emerald-500/30 transition-all">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center space-x-4">
+                          <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-emerald-500 font-bold border border-slate-700 text-xl">
+                            {emp.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <h3 className="text-white font-bold">{emp.name}</h3>
+                            <div className="flex items-center space-x-2 mt-1">
+                              <Shield size={12} className="text-emerald-500" />
+                              <span className="text-slate-500 text-xs font-medium uppercase tracking-wider">{emp.role}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={() => {
+                              setEditingEmployee(emp);
+                              setNewEmployee({
+                                name: emp.name,
+                                role: emp.role,
+                                pin: emp.pin
+                              });
+                              setIsAddEmployeeModalOpen(true);
+                            }}
+                            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          {emp.id !== currentUser?.id && (
+                            <button 
+                              onClick={() => handleDeleteEmployee(emp.id)}
+                              className="p-2 text-red-500/50 hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-auto pt-4 border-t border-slate-800/50 flex items-center justify-between">
+                        <span className="text-slate-600 text-[10px] font-mono">ID: {emp.id.slice(0, 8)}...</span>
+                        <span className="text-slate-600 text-[10px] font-mono">Added: {format(new Date(emp.createdAt), 'dd/MM/yy')}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {employees.length === 0 && (
+                  <div className="text-center py-20 text-slate-600 italic">No employees found</div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -1012,26 +1372,44 @@ export default function App() {
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               className="relative w-full max-w-lg bg-[#0F172A] border border-slate-800 shadow-2xl overflow-hidden flex flex-col font-sans"
             >
-              <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-                <h3 className="text-xl font-black text-white flex items-center gap-2">
-                  <Package className="text-emerald-500" />
-                  {editingProduct ? 'Edit Product' : 'Add New Product'}
-                </h3>
+              <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+                <div className="flex items-center gap-4">
+                  <h3 className="text-lg font-black text-white flex items-center gap-2">
+                    <Package className="text-emerald-500" size={20} />
+                    {editingProduct ? 'Edit Product' : 'Add New Product'}
+                  </h3>
+                  <div className="flex items-center gap-2 bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700/50">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${newProduct.isActive ? 'text-emerald-500' : 'text-slate-500'}`}>
+                      {newProduct.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setNewProduct({ ...newProduct, isActive: !newProduct.isActive })}
+                      className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${
+                        newProduct.isActive ? 'bg-emerald-600' : 'bg-slate-700'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${
+                          newProduct.isActive ? 'translate-x-[18px]' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
                 <button 
                   onClick={() => setIsAddProductModalOpen(false)}
-                  className="p-2 text-slate-400 hover:text-white transition-colors"
+                  className="p-1 text-slate-400 hover:text-white transition-colors"
                 >
-                  <X size={24} />
+                  <X size={20} />
                 </button>
               </div>
 
-              <form onSubmit={handleAddProduct} className="p-6 space-y-4 overflow-y-auto max-h-[70vh]">
-                {/* Image Upload Placeholder */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Product Image</label>
+              <form onSubmit={handleAddProduct} className="p-4 space-y-3 overflow-y-auto max-h-[85vh]">
+                <div className="flex items-center gap-4">
                   <div 
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-32 h-32 bg-slate-800/50 border-2 border-dashed border-slate-700/50 rounded-none flex flex-col items-center justify-center cursor-pointer hover:bg-slate-800 transition-all overflow-hidden group"
+                    className="w-20 h-20 bg-slate-800/50 border-2 border-dashed border-slate-700/50 rounded-none flex flex-col items-center justify-center cursor-pointer hover:bg-slate-800 transition-all overflow-hidden group shrink-0"
                   >
                     {newProduct.image ? (
                       <div className="relative w-full h-full">
@@ -1042,15 +1420,26 @@ export default function App() {
                           referrerPolicy="no-referrer"
                         />
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                          <ImageIcon className="text-white" size={24} />
+                          <ImageIcon className="text-white" size={20} />
                         </div>
                       </div>
                     ) : (
                       <>
-                        <ImageIcon className="text-slate-500 mb-1" size={24} />
-                        <span className="text-slate-400 text-[10px] font-medium text-center px-1">Upload Image</span>
+                        <ImageIcon className="text-slate-500 mb-1" size={20} />
+                        <span className="text-slate-400 text-[8px] font-medium text-center px-1 uppercase">Image</span>
                       </>
                     )}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Product Name</label>
+                    <input 
+                      required
+                      type="text"
+                      value={newProduct.name}
+                      onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                      placeholder="e.g. Spicy Ramen"
+                    />
                   </div>
                   <input 
                     type="file" 
@@ -1061,109 +1450,274 @@ export default function App() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Product Name</label>
-                  <input 
-                    required
-                    type="text"
-                    value={newProduct.name}
-                    onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
-                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                    placeholder="e.g. Spicy Ramen"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cost</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cost</label>
                     <input 
                       required
                       type="number"
                       step="0.01"
                       value={newProduct.cost}
                       onChange={(e) => setNewProduct({...newProduct, cost: parseFloat(e.target.value) || 0})}
-                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Price</label>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Price</label>
                     <input 
                       required
                       type="number"
                       step="0.01"
                       value={newProduct.price}
                       onChange={(e) => setNewProduct({...newProduct, price: parseFloat(e.target.value) || 0})}
-                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Stock</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Stock</label>
                     <input 
                       required
                       type="number"
                       value={newProduct.stock}
                       onChange={(e) => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})}
-                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Low Stock</label>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Low Stock</label>
                     <input 
                       required
                       type="number"
                       value={newProduct.lowStock}
                       onChange={(e) => setNewProduct({...newProduct, lowStock: parseInt(e.target.value) || 0})}
-                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Category</label>
-                  <select 
-                    value={newProduct.category}
-                    onChange={(e) => setNewProduct({...newProduct, category: e.target.value})}
-                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                  >
-                    <option>Noodles</option>
-                    <option>Drinks</option>
-                    <option>Add-ons</option>
-                    <option>Ramen</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Category</label>
+                    <div className="relative">
+                      <select 
+                        value={newProduct.category}
+                        onChange={(e) => setNewProduct({...newProduct, category: e.target.value})}
+                        className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                      >
+                        <option>Noodles</option>
+                        <option>Drinks</option>
+                        <option>Add-ons</option>
+                        <option>Ramen</option>
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Barcode</label>
+                    <input 
+                      type="text"
+                      value={newProduct.barcode}
+                      onChange={(e) => setNewProduct({...newProduct, barcode: e.target.value})}
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                      placeholder="Scan or enter barcode"
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Barcode</label>
-                  <input 
-                    type="text"
-                    value={newProduct.barcode}
-                    onChange={(e) => setNewProduct({...newProduct, barcode: e.target.value})}
-                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                    placeholder="Scan or enter barcode"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Expiry Date</label>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Expiry Date</label>
                   <input 
                     type="date"
                     value={newProduct.expiryDate}
                     onChange={(e) => setNewProduct({...newProduct, expiryDate: e.target.value})}
-                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                   />
                 </div>
 
                 <button 
                   type="submit"
-                  className="w-full bg-emerald-600 text-white py-4 rounded-none font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 mt-4"
+                  className="w-full bg-emerald-600 text-white py-3 rounded-none font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 mt-2 uppercase tracking-widest text-xs"
                 >
-                  {editingProduct ? <RefreshCw size={20} /> : <Plus size={20} />}
-                  <span>{editingProduct ? 'Update Product' : 'Add Product'}</span>
+                  {editingProduct ? <RefreshCw size={16} /> : <Plus size={16} />}
+                  <span>{editingProduct ? 'Save' : 'Add Product'}</span>
                 </button>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Employee Modal */}
+      <AnimatePresence>
+        {isAddEmployeeModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddEmployeeModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-[#0F172A] border border-slate-800 shadow-2xl overflow-hidden font-sans"
+            >
+              <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+                <h3 className="text-xl font-black text-white flex items-center gap-2 uppercase tracking-tight">
+                  <UserPlus className="text-emerald-500" />
+                  {editingEmployee ? 'Edit Employee' : 'Add Employee'}
+                </h3>
+                <button 
+                  onClick={() => setIsAddEmployeeModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddEmployee} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={newEmployee.name}
+                    onChange={(e) => setNewEmployee({ ...newEmployee, name: e.target.value })}
+                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 font-bold"
+                    placeholder="e.g. Juan Dela Cruz"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Role</label>
+                  <select
+                    value={newEmployee.role}
+                    onChange={(e) => setNewEmployee({ ...newEmployee, role: e.target.value as Role })}
+                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 font-bold"
+                  >
+                    <option value="Admin">Admin</option>
+                    <option value="Manager">Manager</option>
+                    <option value="Cashier">Cashier</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">6-Digit PIN</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    pattern="\d{6}"
+                    value={newEmployee.pin}
+                    onChange={(e) => setNewEmployee({ ...newEmployee, pin: e.target.value.replace(/\D/g, '') })}
+                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 font-mono font-bold tracking-[0.5em] text-center"
+                    placeholder="000000"
+                  />
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    type="submit"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-none transition-all shadow-lg shadow-emerald-900/20 uppercase tracking-widest text-sm"
+                  >
+                    {editingEmployee ? 'Update Employee' : 'Create Employee'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+        {/* Transaction Details Modal */}
+        {isTransactionDetailsModalOpen && selectedSessionId && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsTransactionDetailsModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-sm bg-slate-900 border border-slate-800 rounded-none overflow-hidden shadow-2xl font-mono"
+            >
+              <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
+                <h3 className="text-white font-black uppercase tracking-widest">Receipt Details</h3>
+                <button 
+                  onClick={() => setIsTransactionDetailsModalOpen(false)}
+                  className="text-slate-500 hover:text-white transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              
+              {(() => {
+                const group = groupedTransactions.find(g => g.sessionId === selectedSessionId);
+                if (!group) return null;
+                
+                return (
+                  <div className="p-8 space-y-6 max-h-[80vh] overflow-y-auto">
+                    <div className="text-center border-b border-dashed border-slate-800 pb-6">
+                      <div className="text-emerald-500 font-black text-2xl mb-1 tracking-tighter">SyncPOS</div>
+                      <div className="text-slate-500 text-[10px] uppercase tracking-widest">Official Receipt</div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500 uppercase">Session ID</span>
+                        <span className="text-white font-bold">{group.sessionId.slice(0, 8).toUpperCase()}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500 uppercase">Date/Time</span>
+                        <span className="text-white font-bold">{format(new Date(group.timestamp), 'dd/MM/yyyy HH:mm:ss')}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500 uppercase">Cashier</span>
+                        <span className="text-white font-bold text-right">
+                          {employees.find(e => e.id === group.user_id)?.name || 'Unknown'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="border-y border-dashed border-slate-800 py-6 space-y-4">
+                      {group.items.map((item, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-white font-bold">{item.item_name}</span>
+                            <span className="text-white">x{item.quantity}</span>
+                          </div>
+                          <div className="flex justify-between text-xs text-slate-400">
+                            <span>₱{item.price.toFixed(2)} each</span>
+                            <span>₱{item.total.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-between items-end pt-2">
+                      <span className="text-slate-500 text-xs uppercase font-black">Total Amount</span>
+                      <span className="text-white text-3xl font-black tracking-tighter">₱{group.total.toFixed(2)}</span>
+                    </div>
+
+                    <div className="pt-8 text-center">
+                      <div className="text-[10px] text-slate-600 uppercase tracking-[0.2em] mb-4">Thank you for your purchase!</div>
+                      <button 
+                        onClick={() => setIsTransactionDetailsModalOpen(false)}
+                        className="w-full bg-slate-800 hover:bg-slate-700 text-white font-black py-4 rounded-none transition-all uppercase tracking-widest text-xs"
+                      >
+                        Close Receipt
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </motion.div>
           </div>
         )}
