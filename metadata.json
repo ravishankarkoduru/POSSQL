@@ -1,5 +1,5 @@
 {
   "name": "POSSQL",
   "description": "An offline-first POS system with automatic background synchronization and SQLite backend.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["camera"]
 }

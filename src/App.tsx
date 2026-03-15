@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 import { 
   Scan,
   Search,
@@ -21,6 +22,7 @@ import {
   Plus,
   CheckCircle2,
   Calendar,
+  ChevronLeft,
   ChevronDown,
   DollarSign,
   ShoppingBag,
@@ -31,13 +33,39 @@ import {
   Users,
   UserPlus,
   Shield,
+  Tag,
   Image as ImageIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { localDb, type Transaction, type Product, type Employee, type Role } from './db';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { syncData, startAutoSync } from './services/syncService';
-import { format, startOfDay, isSameDay } from 'date-fns';
+import { 
+  format, 
+  startOfDay, 
+  isSameDay, 
+  addMonths, 
+  subMonths, 
+  subWeeks,
+  subYears,
+  startOfMonth, 
+  endOfMonth, 
+  startOfWeek, 
+  endOfWeek, 
+  endOfDay,
+  isSameMonth, 
+  addDays, 
+  eachDayOfInterval, 
+  isWithinInterval, 
+  getDay,
+  parseISO
+} from 'date-fns';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 // --- Constants ---
 
@@ -55,7 +83,7 @@ const NOODLE_ITEMS = [
 const SidebarItem = ({ icon: Icon, label, active, onClick, isDark }: any) => (
   <button
     onClick={onClick}
-    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-none transition-all duration-300 ${
+    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-none transition-all duration-300 ${
       active 
         ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.5)] border border-emerald-400/50' 
         : isDark 
@@ -69,15 +97,15 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, isDark }: any) => (
 );
 
 const Card = ({ children, className = "" }: any) => (
-  <div className={`bg-slate-900/50 rounded-none shadow-sm border border-slate-800 p-6 ${className}`}>
+  <div className={`bg-slate-900/50 rounded-none shadow-sm border border-slate-800 p-4 ${className}`}>
     {children}
   </div>
 );
 
 const SummaryCard = ({ title, value, subtitle, icon: Icon, gradient, bgIcon: BgIcon }: any) => (
-  <div className={`relative overflow-hidden rounded-none p-3 sm:p-6 text-white shadow-xl transition-transform hover:scale-[1.02] ${gradient} aspect-square flex flex-col justify-start text-left`}>
+  <div className={`relative overflow-hidden rounded-none p-2 sm:p-4 text-white shadow-xl transition-transform hover:scale-[1.02] ${gradient} aspect-square flex flex-col justify-start text-left`}>
     <div className="relative z-10 w-full overflow-hidden">
-      <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center mb-1.5 sm:mb-4">
+      <div className="w-7 h-7 sm:w-12 sm:h-12 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center mb-1 sm:mb-2">
         <Icon size={14} className="sm:w-6 sm:h-6" />
       </div>
       <h3 className="text-white font-semibold text-[10px] sm:text-xl mb-0 sm:mb-1 truncate">{title}</h3>
@@ -89,6 +117,56 @@ const SummaryCard = ({ title, value, subtitle, icon: Icon, gradient, bgIcon: BgI
     </div>
   </div>
 );
+
+const BarcodeScanner = ({ onScan, onClose }: { onScan: (decodedText: string) => void, onClose: () => void }) => {
+  useEffect(() => {
+    const scanner = new Html5QrcodeScanner(
+      "reader",
+      { 
+        fps: 10, 
+        qrbox: { width: 250, height: 150 },
+        aspectRatio: 1.0
+      },
+      /* verbose= */ false
+    );
+
+    scanner.render((decodedText) => {
+      onScan(decodedText);
+      scanner.clear().then(() => {
+        onClose();
+      }).catch(err => {
+        console.error("Failed to clear scanner", err);
+        onClose();
+      });
+    }, (error) => {
+      // Silently handle scan errors (common during active scanning)
+    });
+
+    return () => {
+      scanner.clear().catch(err => console.error("Cleanup failed", err));
+    };
+  }, [onScan, onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+      <div className="bg-slate-900 border border-slate-800 w-full max-w-md overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
+          <div className="flex items-center gap-3">
+            <Scan className="text-emerald-500" size={20} />
+            <h3 className="text-white font-black uppercase tracking-widest text-sm">Scan Barcode</h3>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        <div id="reader" className="w-full bg-black min-h-[300px]"></div>
+        <div className="p-4 bg-slate-900/50 border-t border-slate-800 text-center">
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Align 1D barcode within the frame</p>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // --- Login Component ---
 
@@ -308,8 +386,130 @@ const Login = ({ onLogin }: { onLogin: (user: Employee) => void }) => {
 
 // --- Main App ---
 
+// --- Components ---
+
+const DateRangePicker = ({ 
+  startDate, 
+  endDate, 
+  onRangeChange 
+}: { 
+  startDate: Date, 
+  endDate: Date, 
+  onRangeChange: (start: Date, end: Date) => void 
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [viewDate, setViewDate] = useState(startDate);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  const daysOfWeek = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+
+  const monthStart = startOfMonth(viewDate);
+  const monthEnd = endOfMonth(monthStart);
+  const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleDateClick = (date: Date) => {
+    if (isSameDay(startDate, endDate)) {
+      if (date < startDate) {
+        onRangeChange(date, startDate);
+      } else {
+        onRangeChange(startDate, date);
+      }
+      setIsOpen(false);
+    } else {
+      onRangeChange(date, date);
+    }
+  };
+
+  return (
+    <div className="relative z-50" ref={popoverRef}>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded text-[10px] text-white hover:border-emerald-500 transition-colors"
+      >
+        <Calendar size={14} className="text-emerald-500" />
+        <span>{format(startDate, 'MMM dd, yyyy')} - {format(endDate, 'MMM dd, yyyy')}</span>
+      </button>
+
+      {isOpen && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute right-0 top-full mt-2 p-4 sm:p-6 bg-white rounded-2xl shadow-2xl z-50 w-[280px] sm:w-[320px] text-slate-800 font-sans border border-slate-100"
+        >
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="font-bold text-xl text-[#2d3748]">{format(viewDate, 'MMMM yyyy')}</h3>
+            <div className="flex gap-6">
+              <button onClick={() => setViewDate(subMonths(viewDate, 1))} className="text-slate-400 hover:text-slate-900 transition-colors">
+                <ChevronLeft size={20} />
+              </button>
+              <button onClick={() => setViewDate(addMonths(viewDate, 1))} className="text-slate-400 hover:text-slate-900 transition-colors">
+                <ChevronRight size={20} />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 mb-2">
+            {daysOfWeek.map(day => (
+              <div key={day} className="text-center text-slate-400 text-sm font-medium py-2">{day}</div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-y-1">
+            {days.map((day, i) => {
+              const isSelectedStart = isSameDay(day, startDate);
+              const isSelectedEnd = isSameDay(day, endDate);
+              const isInRange = isWithinInterval(day, { 
+                start: startDate < endDate ? startDate : endDate, 
+                end: startDate < endDate ? endDate : startDate 
+              });
+              const isCurrentMonth = isSameMonth(day, viewDate);
+
+              return (
+                <div 
+                  key={i}
+                  className={cn(
+                    "h-10 flex items-center justify-center relative",
+                    isInRange && "bg-[#e3f2fd]",
+                    isSelectedStart && "rounded-l-full",
+                    isSelectedEnd && "rounded-r-full",
+                    !isInRange && "bg-transparent"
+                  )}
+                >
+                  <button
+                    onClick={() => handleDateClick(day)}
+                    className={cn(
+                      "h-9 w-9 flex items-center justify-center text-sm rounded-full transition-all relative z-10",
+                      !isCurrentMonth && "text-slate-300",
+                      isCurrentMonth && !isInRange && "text-slate-600 hover:bg-slate-100",
+                      (isSelectedStart || isSelectedEnd) ? "bg-[#1976d2] text-white shadow-md" : (isInRange ? "text-[#1976d2]" : "text-slate-600")
+                    )}
+                  >
+                    {format(day, 'd')}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
 export default function App() {
-  const [view, setView] = useState<'dashboard' | 'pos' | 'history' | 'products' | 'employees'>('pos');
+  const [view, setView] = useState<'dashboard' | 'pos' | 'history' | 'products' | 'employees' | 'expenses'>('pos');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(true);
   const [currentUser, setCurrentUser] = useState<Employee | null>({
@@ -322,6 +522,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const isOnline = useOnlineStatus();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -359,8 +560,45 @@ export default function App() {
   // Transaction Details State
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [isTransactionDetailsModalOpen, setIsTransactionDetailsModalOpen] = useState(false);
+  
+  // Expenses State
+  const [isAddExpenseModalOpen, setIsAddExpenseModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<any | null>(null);
+  const [newExpense, setNewExpense] = useState({
+    description: '',
+    amount: 0,
+    category: 'Utilities',
+    timestamp: new Date().toISOString()
+  });
+  const [expenseCategories, setExpenseCategories] = useState<string[]>([]);
+  const [isAddingNewCategory, setIsAddingNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [posCategory, setPosCategory] = useState('All');
+  const [posSearchQuery, setPosSearchQuery] = useState('');
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
+  const [productCategories, setProductCategories] = useState<string[]>([]);
+  const [isAddingNewProductCategory, setIsAddingNewProductCategory] = useState(false);
+  const [newProductCategoryName, setNewProductCategoryName] = useState('');
+  const [isManageCategoriesModalOpen, setIsManageCategoriesModalOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerTarget, setScannerTarget] = useState<'pos' | 'product'>('pos');
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
   const [historyStartDate, setHistoryStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-dd'));
   const [historyEndDate, setHistoryEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [dashboardStartDate, setDashboardStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-dd'));
+  const [dashboardEndDate, setDashboardEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   const groupedTransactions = useMemo(() => {
     const groups: { [key: string]: Transaction[] } = {};
@@ -396,6 +634,12 @@ export default function App() {
     }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [transactions, historyStartDate, historyEndDate]);
 
+  const historySummary = useMemo(() => {
+    const count = groupedTransactions.length;
+    const total = groupedTransactions.reduce((sum, t) => sum + t.total, 0);
+    return { count, total };
+  }, [groupedTransactions]);
+
   useEffect(() => {
     const userId = localStorage.getItem('pos_user_id');
     if (userId) {
@@ -424,8 +668,36 @@ export default function App() {
     loadTransactions();
     loadProducts();
     loadEmployees();
+    loadExpenses();
+    loadExpenseCategories();
+    loadProductCategories();
     startAutoSync();
   }, []);
+
+  const loadProductCategories = async () => {
+    let data = await localDb.productCategories.toArray();
+    if (data.length === 0) {
+      const defaults = ['Noodles', 'Drinks', 'Add-ons', 'Ramen'];
+      await localDb.productCategories.bulkAdd(defaults.map(name => ({ id: crypto.randomUUID(), name })));
+      data = await localDb.productCategories.toArray();
+    }
+    setProductCategories(Array.from(new Set(data.map(c => c.name))));
+  };
+
+  const loadExpenseCategories = async () => {
+    let data = await localDb.expenseCategories.toArray();
+    if (data.length === 0) {
+      const defaults = ['Utilities', 'Rent', 'Supplies', 'Salary', 'Maintenance', 'Other'];
+      await localDb.expenseCategories.bulkAdd(defaults.map(name => ({ id: crypto.randomUUID(), name })));
+      data = await localDb.expenseCategories.toArray();
+    }
+    setExpenseCategories(Array.from(new Set(data.map(c => c.name))));
+  };
+
+  const loadExpenses = async () => {
+    const data = await localDb.expenses.orderBy('timestamp').reverse().toArray();
+    setExpenses(data);
+  };
 
   const loadEmployees = async () => {
     const data = await localDb.employees.toArray();
@@ -491,6 +763,7 @@ export default function App() {
     } else {
       const employee: Employee = {
         ...newEmployee,
+        pin: newEmployee.pin || '000000',
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString()
       };
@@ -507,10 +780,16 @@ export default function App() {
   };
 
   const handleDeleteEmployee = async (id: string) => {
-    if (confirm('Are you sure you want to delete this employee?')) {
-      await localDb.employees.delete(id);
-      await loadEmployees();
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Employee',
+      message: 'Are you sure you want to delete this employee? This action cannot be undone.',
+      onConfirm: async () => {
+        await localDb.employees.delete(id);
+        await loadEmployees();
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const openEditModal = (product: Product) => {
@@ -531,10 +810,67 @@ export default function App() {
   };
 
   const handleDeleteProduct = async (id: string) => {
-    // window.confirm can be problematic in iframes, so we'll just delete for now
-    // In a real app, we'd use a custom modal
-    await localDb.products.delete(id);
-    await loadProducts();
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Product',
+      message: 'Are you sure you want to delete this product? This action cannot be undone.',
+      onConfirm: async () => {
+        await localDb.products.delete(id);
+        await loadProducts();
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  const handleAddExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingExpense) {
+      const updatedExpense = {
+        ...editingExpense,
+        ...newExpense,
+      };
+      await localDb.expenses.put(updatedExpense);
+    } else {
+      const expense = {
+        ...newExpense,
+        id: crypto.randomUUID(),
+        synced: 0
+      };
+      await localDb.expenses.add(expense);
+    }
+    await loadExpenses();
+    setIsAddExpenseModalOpen(false);
+    setEditingExpense(null);
+    setNewExpense({
+      description: '',
+      amount: 0,
+      category: 'Utilities',
+      timestamp: new Date().toISOString()
+    });
+  };
+
+  const handleEditExpense = (expense: any) => {
+    setEditingExpense(expense);
+    setNewExpense({
+      description: expense.description,
+      amount: expense.amount,
+      category: expense.category,
+      timestamp: expense.timestamp
+    });
+    setIsAddExpenseModalOpen(true);
+  };
+
+  const handleDeleteExpense = async (id: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Expense',
+      message: 'Are you sure you want to delete this expense? This action cannot be undone.',
+      onConfirm: async () => {
+        await localDb.expenses.delete(id);
+        await loadExpenses();
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -634,6 +970,44 @@ export default function App() {
     }
   };
 
+  const dashboardStats = useMemo(() => {
+    const start = new Date(dashboardStartDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(dashboardEndDate);
+    end.setHours(23, 59, 59, 999);
+
+    const filtered = transactions.filter(t => {
+      const tDate = new Date(t.timestamp);
+      return tDate >= start && tDate <= end;
+    });
+
+    const sales = filtered.reduce((sum, t) => sum + t.total, 0);
+    // For now, keeping the 40% cost assumption as in the original code, 
+    // but applying it to the filtered sales
+    const cost = sales * 0.4;
+    const grossProfit = sales - cost;
+    
+    const filteredExpenses = expenses.filter(e => {
+      const eDate = new Date(e.timestamp);
+      return eDate >= start && eDate <= end;
+    });
+    const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+    
+    const actualProfit = grossProfit - totalExpenses;
+
+    return {
+      sales,
+      cost,
+      grossProfit,
+      actualProfit,
+      expenses: totalExpenses
+    };
+  }, [transactions, expenses, dashboardStartDate, dashboardEndDate]);
+
+  const inventoryValue = useMemo(() => {
+    return products.reduce((sum, p) => sum + (p.cost * p.stock), 0);
+  }, [products]);
+
   const todaySales = useMemo(() => {
     const today = startOfDay(new Date());
     return transactions
@@ -651,7 +1025,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="min-h-screen bg-[#020617] flex text-slate-200">
       {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -660,25 +1034,25 @@ export default function App() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setIsSidebarOpen(false)}
-            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 lg:hidden"
+            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[70] lg:hidden"
           />
         )}
       </AnimatePresence>
 
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 w-72 bg-[#0F172A] border-slate-800 border-r z-50 transition-transform duration-300 lg:translate-x-0 lg:static
+        fixed inset-y-0 left-0 w-72 bg-[#0F172A] border-slate-800 border-r z-[80] transition-transform duration-300 lg:translate-x-0 lg:static
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="h-full flex flex-col p-6">
-          <div className="flex items-center space-x-3 mb-10 px-2">
+        <div className="h-full flex flex-col p-4">
+          <div className="flex items-center space-x-3 mb-6 px-2">
             <div className="bg-emerald-600 p-2 rounded-lg text-white">
               <ShoppingCart size={24} />
             </div>
             <span className="text-xl font-bold text-white tracking-tight">SyncPOS</span>
           </div>
 
-          <nav className="flex-1 space-y-2">
+          <nav className="flex-1 space-y-1">
             <SidebarItem 
               icon={Store} 
               label="POS" 
@@ -702,10 +1076,17 @@ export default function App() {
             />
             <SidebarItem 
               icon={History} 
-              label="History" 
+              label="Receipts" 
               active={view === 'history'} 
               isDark={true}
               onClick={() => { setView('history'); setIsSidebarOpen(false); }} 
+            />
+            <SidebarItem 
+              icon={Wallet} 
+              label="Expenses" 
+              active={view === 'expenses'} 
+              isDark={true}
+              onClick={() => { setView('expenses'); setIsSidebarOpen(false); }} 
             />
             {(currentUser?.role === 'Admin' || currentUser?.role === 'Manager') && (
               <SidebarItem 
@@ -719,7 +1100,7 @@ export default function App() {
           </nav>
 
           <div className="mt-auto pt-6 border-t border-slate-800">
-            <div className="flex items-center space-x-3 px-2 mb-6">
+            <div className="flex items-center space-x-3 px-2 mb-4">
               <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-emerald-500 font-bold border border-slate-700">
                 {currentUser?.name.charAt(0).toUpperCase()}
               </div>
@@ -753,14 +1134,14 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 transition-colors duration-300 bg-[#0F172A]">
         {/* Header */}
-        <header className="bg-[#0F172A] border-slate-800 border-b h-20 flex items-center justify-between px-4 lg:px-8 sticky top-0 z-30 transition-colors">
+        <header className="bg-[#0F172A] border-slate-800 border-b h-14 flex items-center justify-between px-3 lg:px-4 sticky top-0 z-30 transition-colors">
           <div className="flex items-center space-x-4">
             <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-400 bg-slate-800/50 rounded-none">
               <Menu size={24} />
             </button>
             <div className="flex flex-col">
               <h2 className="text-xl font-black leading-tight text-emerald-500">
-                {view === 'pos' ? 'POS' : view === 'dashboard' ? 'Dashboard' : view === 'products' ? 'Products' : view === 'employees' ? 'Employees' : 'History'}
+                {view === 'pos' ? 'POS' : view === 'dashboard' ? 'Dashboard' : view === 'products' ? 'Products' : view === 'employees' ? 'Employees' : 'Receipts'}
               </h2>
               {view === 'pos' && <span className="text-xs text-slate-500 font-medium">Point of Sale</span>}
             </div>
@@ -779,14 +1160,11 @@ export default function App() {
 
             {view === 'products' && (
               <div className="flex items-center gap-2">
-                <button className="p-2 text-slate-400 bg-slate-800/50 rounded-none hover:bg-slate-700">
-                  <RefreshCw size={20} className="rotate-90" />
-                </button>
-                <button className="p-2 text-slate-400 bg-slate-800/50 rounded-none hover:bg-slate-700">
+                <button 
+                  onClick={() => setIsManageCategoriesModalOpen(true)}
+                  className="p-2 text-slate-400 bg-slate-800/50 rounded-none hover:bg-slate-700"
+                >
                   <ChevronDown size={20} />
-                </button>
-                <button className="p-2 text-slate-400 bg-slate-800/50 rounded-none hover:bg-slate-700">
-                  <Package size={20} />
                 </button>
                 <button 
                   onClick={() => {
@@ -839,7 +1217,7 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        <div className="p-4 lg:p-8 overflow-y-auto flex-1">
+        <div className="p-2 lg:p-4 overflow-y-auto flex-1">
           <AnimatePresence mode="wait">
             {view === 'pos' && (
               <motion.div 
@@ -847,31 +1225,55 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="flex flex-col gap-6 h-full"
+                className="flex flex-col gap-3 h-full"
               >
                 {/* Search & Filter Bar */}
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                   <div className="flex-1 relative">
-                    <select className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/50">
-                      <option>All items</option>
-                      <option>Ramen</option>
-                      <option>Drinks</option>
-                      <option>Add-ons</option>
+                    <select 
+                      value={posCategory}
+                      onChange={(e) => setPosCategory(e.target.value)}
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none pl-4 pr-10 py-2 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    >
+                      {['All', ...Array.from(new Set(products.map(p => p.category))).filter(c => c !== 'All')].map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
                     </select>
                     <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   </div>
-                  <button className="bg-slate-800/50 border border-slate-700/50 p-3 rounded-none text-slate-300 hover:bg-slate-700 transition-colors">
-                    <Scan size={24} />
-                  </button>
-                  <button className="bg-slate-800/50 border border-slate-700/50 p-3 rounded-none text-slate-300 hover:bg-slate-700 transition-colors">
-                    <Search size={24} />
+                  <div className="flex-[2] relative">
+                    <input 
+                      type="text"
+                      placeholder="Search items or scan barcode..."
+                      value={posSearchQuery}
+                      onChange={(e) => setPosSearchQuery(e.target.value)}
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none pl-4 pr-10 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    />
+                    <Search size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setScannerTarget('pos');
+                      setIsScannerOpen(true);
+                    }}
+                    className="bg-slate-800/50 border border-slate-700/50 px-4 rounded-none text-slate-300 hover:bg-slate-700 transition-colors flex items-center justify-center"
+                    title="Scan Barcode"
+                  >
+                    <Scan size={20} />
                   </button>
                 </div>
 
                 {/* Items Grid */}
                 <div className="flex-1">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-[6px]">
-                    {products.filter(p => p.isActive !== false).map((item) => (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-1">
+                    {products
+                      .filter(p => p.isActive !== false)
+                      .filter(p => posCategory === 'All' || p.category === posCategory)
+                      .filter(p => 
+                        p.name.toLowerCase().includes(posSearchQuery.toLowerCase()) || 
+                        (p.barcode && p.barcode.includes(posSearchQuery))
+                      )
+                      .map((item) => (
                       <motion.button
                         key={item.id}
                         whileHover={{ scale: 1.02 }}
@@ -901,12 +1303,12 @@ export default function App() {
                           )}
                         </div>
                         <div className="p-1 flex flex-col">
-                          <h4 className="font-bold text-white text-xs line-clamp-1">{item.name}</h4>
+                          <h4 className="font-bold text-white text-[10px] line-clamp-1">{item.name}</h4>
                           <div className="flex items-center justify-between">
-                            <p className="text-white font-bold text-sm">₱{item.price.toFixed(2)}</p>
+                            <p className="text-white font-bold text-xs">₱{item.price.toFixed(2)}</p>
                             <div className="flex items-center gap-2">
-                              {item.isExpired && <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Expired</span>}
-                              <span className={`font-bold text-xs ${item.stock <= (item.lowStock || 5) ? 'text-rose-500' : 'text-emerald-500'}`}>{item.stock}</span>
+                              {item.isExpired && <span className="text-[8px] font-bold text-red-500 uppercase tracking-wider">Expired</span>}
+                              <span className={`font-bold text-[10px] ${item.stock <= (item.lowStock || 5) ? 'text-rose-500' : 'text-emerald-500'}`}>{item.stock}</span>
                             </div>
                           </div>
                         </div>
@@ -926,27 +1328,26 @@ export default function App() {
                 className="space-y-6 max-w-4xl mx-auto"
               >
                 {/* Search & Filter Row */}
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                   {/* Search Bar */}
                   <div className="flex-1 relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                     <input 
                       type="text" 
                       placeholder="Search products..."
-                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none pl-12 pr-4 py-4 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-sans"
+                      className="w-full bg-slate-800/30 border border-slate-800 rounded-none pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all font-sans"
                     />
                   </div>
 
                   {/* Category Filter */}
-                  <div className="w-48 relative font-sans">
-                    <select className="w-full h-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
-                      <option>All</option>
-                      <option>Noodles</option>
-                      <option>Drinks</option>
-                      <option>Add-ons</option>
-                      <option>Ramen</option>
+                  <div className="flex-1 relative font-sans">
+                    <select className="w-full bg-slate-800/30 border border-slate-800 rounded-none px-4 py-3 text-sm text-white appearance-none focus:outline-none focus:ring-1 focus:ring-emerald-500/30">
+                      <option value="All">All</option>
+                      {productCategories.filter(cat => cat !== 'All').map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
                     </select>
-                    <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                   </div>
                 </div>
 
@@ -975,42 +1376,32 @@ export default function App() {
                               <span className="text-[8px] font-black bg-slate-700 text-slate-400 px-1 py-0.5 uppercase tracking-tighter">Inactive</span>
                             )}
                           </h4>
-                          <div className="flex items-center gap-0">
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRestock(item.id, 10);
-                              }}
-                              className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-none transition-all"
-                              title="Restock +10"
-                            >
-                              <PlusCircle size={14} />
-                            </button>
+                          <div className="flex items-center gap-1">
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openEditModal(item);
                               }}
-                              className="p-1 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-none transition-all"
+                              className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 transition-all"
                               title="Edit Product"
                             >
-                              <Edit size={14} />
+                              <Edit size={16} />
                             </button>
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleDeleteProduct(item.id);
                               }}
-                              className="p-1 text-slate-400 hover:text-rose-500 hover:bg-slate-800 rounded-none transition-all"
+                              className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-800 transition-all"
                               title="Delete Product"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={16} />
                             </button>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <p className="text-white text-base">₱{item.price.toFixed(2)}</p>
-                          <span className="bg-emerald-500/10 text-emerald-500 text-[9px] px-1.5 py-0.5 rounded-none">
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-white text-sm font-bold">₱{item.price.toFixed(2)}</p>
+                          <span className="bg-emerald-900/40 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-sm">
                             {item.stock} left
                           </span>
                         </div>
@@ -1027,13 +1418,51 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="space-y-8 max-w-5xl mx-auto"
+                className="space-y-4 max-w-5xl mx-auto"
               >
+                {/* Dashboard Header with Date Picker */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-900/50 p-2 border border-slate-800">
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-widest">Overview</h3>
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        onClick={() => {
+                          setDashboardStartDate(format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+                          setDashboardEndDate(format(new Date(), 'yyyy-MM-dd'));
+                        }}
+                        className="px-2 py-1 text-[10px] bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded text-white transition-colors"
+                      >W</button>
+                      <button 
+                        onClick={() => {
+                          setDashboardStartDate(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+                          setDashboardEndDate(format(new Date(), 'yyyy-MM-dd'));
+                        }}
+                        className="px-2 py-1 text-[10px] bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded text-white transition-colors"
+                      >M</button>
+                      <button 
+                        onClick={() => {
+                          setDashboardStartDate(format(startOfMonth(subMonths(new Date(), 12)), 'yyyy-MM-dd'));
+                          setDashboardEndDate(format(new Date(), 'yyyy-MM-dd'));
+                        }}
+                        className="px-2 py-1 text-[10px] bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded text-white transition-colors"
+                      >Y</button>
+                    </div>
+                  </div>
+                  <DateRangePicker 
+                    startDate={new Date(dashboardStartDate)}
+                    endDate={new Date(dashboardEndDate)}
+                    onRangeChange={(start, end) => {
+                      setDashboardStartDate(format(start, 'yyyy-MM-dd'));
+                      setDashboardEndDate(format(end, 'yyyy-MM-dd'));
+                    }}
+                  />
+                </div>
+
                 {/* Stats Grid */}
-                <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
+                <div className="grid grid-cols-3 gap-2">
                   <SummaryCard 
                     title="Sales" 
-                    value={todaySales.toFixed(2)} 
+                    value={dashboardStats.sales.toFixed(2)} 
                     subtitle="Revenue in period" 
                     icon={DollarSign} 
                     bgIcon={DollarSign}
@@ -1041,7 +1470,7 @@ export default function App() {
                   />
                   <SummaryCard 
                     title="Cost of Items" 
-                    value={(todaySales * 0.4).toFixed(2)} 
+                    value={dashboardStats.cost.toFixed(2)} 
                     subtitle="Cost in period" 
                     icon={ShoppingBag} 
                     bgIcon={ShoppingBag}
@@ -1049,7 +1478,7 @@ export default function App() {
                   />
                   <SummaryCard 
                     title="Gross Profit" 
-                    value={(todaySales * 0.6).toFixed(2)} 
+                    value={dashboardStats.grossProfit.toFixed(2)} 
                     subtitle="Revenue - Item Cost" 
                     icon={TrendingUp} 
                     bgIcon={TrendingUp}
@@ -1057,7 +1486,7 @@ export default function App() {
                   />
                   <SummaryCard 
                     title="Inventory Val..." 
-                    value="2922.00" 
+                    value={inventoryValue.toFixed(2)} 
                     subtitle="Total stock value" 
                     icon={Package} 
                     bgIcon={Package}
@@ -1065,7 +1494,7 @@ export default function App() {
                   />
                   <SummaryCard 
                     title="Actual Profit" 
-                    value={(todaySales * 0.6).toFixed(2)} 
+                    value={dashboardStats.actualProfit.toFixed(2)} 
                     subtitle="Gross Profit - Expenses" 
                     icon={TrendingUp} 
                     bgIcon={TrendingUp}
@@ -1073,7 +1502,7 @@ export default function App() {
                   />
                   <SummaryCard 
                     title="Expenses" 
-                    value="0.00" 
+                    value={dashboardStats.expenses.toFixed(2)} 
                     subtitle="Expenses in period" 
                     icon={Wallet} 
                     bgIcon={Wallet}
@@ -1140,26 +1569,48 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="max-w-4xl mx-auto font-mono"
+                className="max-w-4xl mx-auto font-mono overflow-visible"
+                style={{ overflow: 'visible' }}
               >
-                <div className="bg-slate-900/50 rounded-none border border-slate-800 overflow-hidden shadow-sm">
-                  <div className="px-4 py-3 text-sm font-bold text-white border-b border-slate-800 bg-slate-800/50 uppercase tracking-widest flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <span>Transaction History</span>
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="date" 
-                        value={historyStartDate}
-                        onChange={(e) => setHistoryStartDate(e.target.value)}
-                        className="bg-slate-900 border border-slate-700 text-[10px] px-2 py-1 focus:outline-none focus:border-emerald-500"
-                      />
-                      <span className="text-slate-500 text-[10px]">to</span>
-                      <input 
-                        type="date" 
-                        value={historyEndDate}
-                        onChange={(e) => setHistoryEndDate(e.target.value)}
-                        className="bg-slate-900 border border-slate-700 text-[10px] px-2 py-1 focus:outline-none focus:border-emerald-500"
-                      />
+                <div className="bg-slate-900/50 rounded-none border border-slate-800 shadow-sm overflow-visible">
+                  <div className="px-4 py-3 text-sm font-bold text-white border-b border-slate-800 bg-slate-800/50 uppercase tracking-widest flex flex-col sm:flex-row sm:items-center justify-between gap-4 overflow-visible">
+                    <div className="flex items-center gap-4">
+                      <span>Receipts</span>
+                      <div className="flex items-center gap-1.5">
+                        <button 
+                          onClick={() => {
+                            setHistoryStartDate(format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+                            setHistoryEndDate(format(new Date(), 'yyyy-MM-dd'));
+                          }}
+                          className="px-2 py-1 text-[10px] bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded transition-colors"
+                        >W</button>
+                        <button 
+                          onClick={() => {
+                            setHistoryStartDate(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+                            setHistoryEndDate(format(new Date(), 'yyyy-MM-dd'));
+                          }}
+                          className="px-2 py-1 text-[10px] bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded transition-colors"
+                        >M</button>
+                        <button 
+                          onClick={() => {
+                            setHistoryStartDate(format(startOfMonth(subMonths(new Date(), 12)), 'yyyy-MM-dd'));
+                            setHistoryEndDate(format(new Date(), 'yyyy-MM-dd'));
+                          }}
+                          className="px-2 py-1 text-[10px] bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded transition-colors"
+                        >Y</button>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-medium normal-case tracking-normal ml-2">
+                        {historySummary.count}x ₱{historySummary.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
                     </div>
+                    <DateRangePicker 
+                      startDate={new Date(historyStartDate)}
+                      endDate={new Date(historyEndDate)}
+                      onRangeChange={(start, end) => {
+                        setHistoryStartDate(format(start, 'yyyy-MM-dd'));
+                        setHistoryEndDate(format(end, 'yyyy-MM-dd'));
+                      }}
+                    />
                   </div>
                   
                   <div className="divide-y divide-slate-800/30">
@@ -1184,7 +1635,78 @@ export default function App() {
                       </button>
                     ))}
                     {groupedTransactions.length === 0 && (
-                      <div className="p-10 text-center text-slate-600 italic text-sm">No transaction history found</div>
+                      <div className="p-10 text-center text-slate-600 italic text-sm">No receipts found</div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {view === 'expenses' && (
+              <motion.div 
+                key="expenses"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="max-w-4xl mx-auto font-mono"
+              >
+                <div className="bg-slate-900/50 rounded-none border border-slate-800 shadow-sm">
+                  <div className="px-4 py-3 text-sm font-bold text-white border-b border-slate-800 bg-slate-800/50 uppercase tracking-widest flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <span>Expenses</span>
+                      <span className="text-[10px] text-slate-400 font-medium normal-case tracking-normal">
+                        Total: ₱{expenses.reduce((sum, e) => sum + e.amount, 0).toFixed(2)}
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setEditingExpense(null);
+                        setNewExpense({
+                          description: '',
+                          amount: 0,
+                          category: 'Utilities',
+                          timestamp: new Date().toISOString()
+                        });
+                        setIsAddExpenseModalOpen(true);
+                      }}
+                      className="flex items-center gap-2 bg-emerald-500 text-white px-3 py-1 rounded text-[10px] hover:bg-emerald-600 transition-colors"
+                    >
+                      <PlusCircle size={14} />
+                      <span>Add Expense</span>
+                    </button>
+                  </div>
+                  
+                  <div className="divide-y divide-slate-800/30">
+                    {expenses.map((expense) => (
+                      <div key={expense.id} className="px-4 py-3 flex items-center justify-between group hover:bg-slate-800/30 transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-sm text-white font-bold">{expense.description}</span>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-[10px] text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded uppercase">{expense.category}</span>
+                            <span className="text-[10px] text-slate-500">{format(new Date(expense.timestamp), 'dd/MM/yy HH:mm')}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <span className="text-sm text-white font-bold">₱{expense.amount.toFixed(2)}</span>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => handleEditExpense(expense)}
+                              className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-slate-800 rounded transition-all"
+                            >
+                              <Edit size={14} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteExpense(expense.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-800 rounded transition-all"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {expenses.length === 0 && (
+                      <div className="p-10 text-center text-slate-600 italic text-sm">No expenses recorded</div>
                     )}
                   </div>
                 </div>
@@ -1197,11 +1719,28 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="max-w-6xl mx-auto"
+                className="max-w-6xl mx-auto space-y-6"
               >
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
+                  <input 
+                    type="text" 
+                    placeholder="Search employees by name or role..."
+                    value={employeeSearchQuery}
+                    onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                    className="w-full bg-slate-800/30 border border-slate-800 rounded-none pl-12 pr-4 py-4 text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all font-sans"
+                  />
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {employees.map((emp) => (
-                    <div key={emp.id} className="bg-slate-900/50 border border-slate-800 p-6 flex flex-col group hover:border-emerald-500/30 transition-all">
+                  {employees
+                    .filter(emp => 
+                      emp.name.toLowerCase().includes(employeeSearchQuery.toLowerCase()) ||
+                      emp.role.toLowerCase().includes(employeeSearchQuery.toLowerCase())
+                    )
+                    .map((emp) => (
+                      <div key={emp.id} className="bg-slate-900/50 border border-slate-800 p-6 flex flex-col group hover:border-emerald-500/30 transition-all">
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center space-x-4">
                           <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-emerald-500 font-bold border border-slate-700 text-xl">
@@ -1273,7 +1812,7 @@ export default function App() {
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               className="relative w-full max-w-lg bg-[#0F172A] border border-slate-800 shadow-2xl overflow-hidden flex flex-col font-sans"
             >
-              <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+              <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
                 <h3 className="text-xl font-black text-white flex items-center gap-2">
                   <ShoppingCart className="text-emerald-500" />
                   Current Order
@@ -1286,7 +1825,7 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-2 min-h-[300px] max-h-[60vh]">
+              <div className="flex-1 overflow-y-auto p-4 space-y-1 min-h-[300px] max-h-[60vh]">
                 {cart.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-2 opacity-60 py-20">
                     <ShoppingCart size={48} strokeWidth={1} />
@@ -1294,7 +1833,7 @@ export default function App() {
                   </div>
                 ) : (
                   cart.map((c) => (
-                    <div key={c.item.id} className="flex items-center gap-4 py-4 border-b border-dashed border-slate-800 last:border-0">
+                    <div key={c.item.id} className="flex items-center gap-4 py-2 border-b border-dashed border-slate-800 last:border-0">
                       <div className="flex-1 min-w-0">
                         <h5 className="text-sm font-bold text-white truncate uppercase tracking-tight">{c.item.name}</h5>
                         <p className="text-xs text-emerald-500 font-mono mt-1 font-bold">₱{c.item.price.toFixed(2)}</p>
@@ -1327,7 +1866,7 @@ export default function App() {
                 )}
               </div>
 
-              <div className="p-6 bg-slate-900 border-t border-slate-800 space-y-4">
+              <div className="p-4 bg-slate-900 border-t border-slate-800 space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-slate-500 font-medium">Subtotal</span>
                   <span className="text-white font-bold">₱{cartTotal.toFixed(2)}</span>
@@ -1376,7 +1915,7 @@ export default function App() {
                 <div className="flex items-center gap-4">
                   <h3 className="text-lg font-black text-white flex items-center gap-2">
                     <Package className="text-emerald-500" size={20} />
-                    {editingProduct ? 'Edit Product' : 'Add New Product'}
+                    {editingProduct ? 'Edit' : 'New'}
                   </h3>
                   <div className="flex items-center gap-2 bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700/50">
                     <span className={`text-[10px] font-bold uppercase tracking-wider ${newProduct.isActive ? 'text-emerald-500' : 'text-slate-500'}`}>
@@ -1504,28 +2043,106 @@ export default function App() {
                     <div className="relative">
                       <select 
                         value={newProduct.category}
-                        onChange={(e) => setNewProduct({...newProduct, category: e.target.value})}
+                        onChange={(e) => {
+                          if (e.target.value === 'ADD_NEW') {
+                            setIsAddingNewProductCategory(true);
+                          } else {
+                            setNewProduct({...newProduct, category: e.target.value});
+                          }
+                        }}
                         className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                       >
-                        <option>Noodles</option>
-                        <option>Drinks</option>
-                        <option>Add-ons</option>
-                        <option>Ramen</option>
+                        {productCategories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                        <option value="ADD_NEW" className="text-emerald-400 font-bold">+ Add New Category...</option>
                       </select>
                       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                     </div>
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Barcode</label>
-                    <input 
-                      type="text"
-                      value={newProduct.barcode}
-                      onChange={(e) => setNewProduct({...newProduct, barcode: e.target.value})}
-                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                      placeholder="Scan or enter barcode"
-                    />
+                    <div className="relative">
+                      <input 
+                        type="text"
+                        value={newProduct.barcode}
+                        onChange={(e) => setNewProduct({...newProduct, barcode: e.target.value})}
+                        className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none pl-3 pr-10 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                        placeholder="Scan or enter barcode"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setScannerTarget('product');
+                          setIsScannerOpen(true);
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-500 transition-colors"
+                        title="Scan Barcode"
+                      >
+                        <Scan size={16} />
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                {isAddingNewProductCategory && (
+                  <div className="space-y-1 p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-none animate-in slide-in-from-top-2 duration-200">
+                    <label className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">New Category Name</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text"
+                        value={newProductCategoryName}
+                        onChange={(e) => setNewProductCategoryName(e.target.value)}
+                        className="flex-1 bg-slate-800/50 border border-emerald-500/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                        placeholder="Enter category name"
+                        autoFocus
+                        onKeyDown={async (e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (newProductCategoryName.trim()) {
+                              const exists = productCategories.some(c => c.toLowerCase() === newProductCategoryName.trim().toLowerCase());
+                              if (!exists) {
+                                await localDb.productCategories.add({ id: crypto.randomUUID(), name: newProductCategoryName.trim() });
+                                await loadProductCategories();
+                              }
+                              setNewProduct({...newProduct, category: newProductCategoryName.trim()});
+                              setNewProductCategoryName('');
+                              setIsAddingNewProductCategory(false);
+                            }
+                          }
+                        }}
+                      />
+                      <button 
+                        type="button"
+                        onClick={async () => {
+                          if (newProductCategoryName.trim()) {
+                            const exists = productCategories.some(c => c.toLowerCase() === newProductCategoryName.trim().toLowerCase());
+                            if (!exists) {
+                              await localDb.productCategories.add({ id: crypto.randomUUID(), name: newProductCategoryName.trim() });
+                              await loadProductCategories();
+                            }
+                            setNewProduct({...newProduct, category: newProductCategoryName.trim()});
+                            setNewProductCategoryName('');
+                            setIsAddingNewProductCategory(false);
+                          }
+                        }}
+                        className="bg-emerald-600 text-white px-3 py-2 text-[10px] font-bold hover:bg-emerald-700 transition-colors uppercase tracking-widest"
+                      >
+                        Add
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setIsAddingNewProductCategory(false);
+                          setNewProductCategoryName('');
+                        }}
+                        className="bg-slate-700 text-white px-3 py-2 text-[10px] font-bold hover:bg-slate-600 transition-colors uppercase tracking-widest"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Expiry Date</label>
@@ -1542,9 +2159,359 @@ export default function App() {
                   className="w-full bg-emerald-600 text-white py-3 rounded-none font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 mt-2 uppercase tracking-widest text-xs"
                 >
                   {editingProduct ? <RefreshCw size={16} /> : <Plus size={16} />}
-                  <span>{editingProduct ? 'Save' : 'Add Product'}</span>
+                  <span>Save</span>
                 </button>
               </form>
+            </motion.div>
+          </div>
+        )}
+
+        {isManageCategoriesModalOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsManageCategoriesModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-[#0F172A] border border-slate-800 shadow-2xl overflow-hidden flex flex-col font-sans"
+            >
+              <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-500/10 rounded-none text-emerald-500">
+                    <Tag size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-white uppercase tracking-tight">Product Categories</h3>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Manage your inventory groups</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsManageCategoriesModalOpen(false)}
+                  className="p-2 text-slate-500 hover:text-white transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* Add New Category */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Add New Category</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text"
+                      value={newProductCategoryName}
+                      onChange={(e) => setNewProductCategoryName(e.target.value)}
+                      className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                      placeholder="Category name..."
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter' && newProductCategoryName.trim()) {
+                          const exists = productCategories.some(c => c.toLowerCase() === newProductCategoryName.trim().toLowerCase());
+                          if (!exists) {
+                            await localDb.productCategories.add({ id: crypto.randomUUID(), name: newProductCategoryName.trim() });
+                            await loadProductCategories();
+                            setNewProductCategoryName('');
+                          }
+                        }
+                      }}
+                    />
+                    <button 
+                      onClick={async () => {
+                        if (newProductCategoryName.trim()) {
+                          const exists = productCategories.some(c => c.toLowerCase() === newProductCategoryName.trim().toLowerCase());
+                          if (!exists) {
+                            await localDb.productCategories.add({ id: crypto.randomUUID(), name: newProductCategoryName.trim() });
+                            await loadProductCategories();
+                            setNewProductCategoryName('');
+                          }
+                        }
+                      }}
+                      className="bg-emerald-600 text-white px-4 py-2 text-xs font-bold hover:bg-emerald-700 transition-colors uppercase tracking-widest"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                {/* Categories List */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Current Categories</label>
+                  <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
+                    {productCategories.map((cat) => (
+                      <div 
+                        key={cat}
+                        className="flex items-center justify-between p-2 bg-slate-800/30 border border-slate-700/30 group hover:border-slate-600 transition-all"
+                      >
+                        <span className="text-sm text-slate-300">{cat}</span>
+                        <button 
+                          onClick={async () => {
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Delete Category',
+                              message: `Are you sure you want to delete "${cat}"? Products in this category will remain but their category label will be outdated.`,
+                              onConfirm: async () => {
+                                const categoryDoc = await localDb.productCategories.where('name').equals(cat).first();
+                                if (categoryDoc) {
+                                  await localDb.productCategories.delete(categoryDoc.id);
+                                  await loadProductCategories();
+                                }
+                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                              }
+                            });
+                          }}
+                          className="p-1 text-slate-500 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-900/50 border-t border-slate-800 flex justify-end">
+                <button 
+                  onClick={() => setIsManageCategoriesModalOpen(false)}
+                  className="px-6 py-2 bg-slate-800 text-white text-xs font-bold hover:bg-slate-700 transition-all uppercase tracking-widest"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {isScannerOpen && (
+          <BarcodeScanner 
+            onScan={(code) => {
+              if (scannerTarget === 'pos') {
+                setPosSearchQuery(code);
+                // Optionally find item and add to cart automatically
+                const foundProduct = products.find(p => p.barcode === code);
+                if (foundProduct && foundProduct.stock > 0) {
+                  addToCart(foundProduct);
+                }
+              } else {
+                setNewProduct(prev => ({ ...prev, barcode: code }));
+              }
+              setIsScannerOpen(false);
+            }}
+            onClose={() => setIsScannerOpen(false)}
+          />
+        )}
+
+        {isAddExpenseModalOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => { setIsAddExpenseModalOpen(false); setIsAddingNewCategory(false); }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-lg bg-[#0F172A] border border-slate-800 shadow-2xl overflow-hidden flex flex-col font-sans"
+            >
+              <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <Wallet className="text-emerald-500" size={20} />
+                  {editingExpense ? 'Edit Expense' : 'Add New Expense'}
+                </h3>
+                <button 
+                  onClick={() => { setIsAddExpenseModalOpen(false); setIsAddingNewCategory(false); }}
+                  className="p-1 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddExpense} className="p-4 space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Description</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newExpense.description}
+                    onChange={(e) => setNewExpense({...newExpense, description: e.target.value})}
+                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    placeholder="e.g. Electricity Bill"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Amount</label>
+                    <input 
+                      required
+                      type="number"
+                      step="0.01"
+                      value={newExpense.amount}
+                      onChange={(e) => setNewExpense({...newExpense, amount: parseFloat(e.target.value)})}
+                      className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Category</label>
+                    <div className="relative">
+                      <select 
+                        value={newExpense.category}
+                        onChange={(e) => {
+                          if (e.target.value === 'ADD_NEW') {
+                            setIsAddingNewCategory(true);
+                          } else {
+                            setNewExpense({...newExpense, category: e.target.value});
+                          }
+                        }}
+                        className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                      >
+                        {expenseCategories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                        <option value="ADD_NEW" className="text-emerald-400 font-bold">+ Add New Category...</option>
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                    </div>
+                  </div>
+                </div>
+
+                {isAddingNewCategory && (
+                  <div className="space-y-1 p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-none animate-in slide-in-from-top-2 duration-200">
+                    <label className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">New Category Name</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text"
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        className="flex-1 bg-slate-800/50 border border-emerald-500/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                        placeholder="Enter category name"
+                        autoFocus
+                        onKeyDown={async (e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (newCategoryName.trim()) {
+                              const exists = expenseCategories.some(c => c.toLowerCase() === newCategoryName.trim().toLowerCase());
+                              if (!exists) {
+                                await localDb.expenseCategories.add({ id: crypto.randomUUID(), name: newCategoryName.trim() });
+                                await loadExpenseCategories();
+                              }
+                              setNewExpense({...newExpense, category: newCategoryName.trim()});
+                              setNewCategoryName('');
+                              setIsAddingNewCategory(false);
+                            }
+                          }
+                        }}
+                      />
+                      <button 
+                        type="button"
+                        onClick={async () => {
+                          if (newCategoryName.trim()) {
+                            const exists = expenseCategories.some(c => c.toLowerCase() === newCategoryName.trim().toLowerCase());
+                            if (!exists) {
+                              await localDb.expenseCategories.add({ id: crypto.randomUUID(), name: newCategoryName.trim() });
+                              await loadExpenseCategories();
+                            }
+                            setNewExpense({...newExpense, category: newCategoryName.trim()});
+                            setNewCategoryName('');
+                            setIsAddingNewCategory(false);
+                          }
+                        }}
+                        className="bg-emerald-600 text-white px-3 py-2 text-[10px] font-bold hover:bg-emerald-700 transition-colors uppercase tracking-widest"
+                      >
+                        Add
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setIsAddingNewCategory(false);
+                          setNewCategoryName('');
+                        }}
+                        className="bg-slate-700 text-white px-3 py-2 text-[10px] font-bold hover:bg-slate-600 transition-colors uppercase tracking-widest"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Date</label>
+                  <input 
+                    type="datetime-local"
+                    value={format(new Date(newExpense.timestamp), "yyyy-MM-dd'T'HH:mm")}
+                    onChange={(e) => setNewExpense({...newExpense, timestamp: new Date(e.target.value).toISOString()})}
+                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  />
+                </div>
+
+                <button 
+                  type="submit"
+                  className="w-full bg-emerald-600 text-white py-3 rounded-none font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 mt-2 uppercase tracking-widest text-xs"
+                >
+                  {editingExpense ? <RefreshCw size={16} /> : <Plus size={16} />}
+                  <span>{editingExpense ? 'Save' : 'Add Expense'}</span>
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {confirmModal.isOpen && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-sm bg-[#0F172A] border border-slate-800 shadow-2xl overflow-hidden flex flex-col font-sans"
+            >
+              <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <Trash2 className="text-red-500" size={20} />
+                  {confirmModal.title}
+                </h3>
+                <button 
+                  onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                  className="p-1 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 text-center">
+                <p className="text-slate-300 text-sm leading-relaxed">
+                  {confirmModal.message}
+                </p>
+              </div>
+
+              <div className="p-4 border-t border-slate-800 flex gap-3 bg-slate-900/50">
+                <button 
+                  onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 px-4 py-2 text-xs font-bold text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 transition-all uppercase tracking-widest"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmModal.onConfirm}
+                  className="flex-1 px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all shadow-lg shadow-red-900/20 uppercase tracking-widest"
+                >
+                  Confirm
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
@@ -1607,10 +2574,9 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">6-Digit PIN</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">6-Digit PIN (Optional)</label>
                   <input
                     type="text"
-                    required
                     maxLength={6}
                     pattern="\d{6}"
                     value={newEmployee.pin}
@@ -1618,6 +2584,7 @@ export default function App() {
                     className="w-full bg-slate-800/50 border border-slate-700/50 rounded-none px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 font-mono font-bold tracking-[0.5em] text-center"
                     placeholder="000000"
                   />
+                  <p className="text-[10px] text-slate-600 mt-1 italic">Defaults to 000000 if left blank</p>
                 </div>
 
                 <div className="pt-4">
@@ -1686,7 +2653,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="border-y border-dashed border-slate-800 py-6 space-y-4">
+                    <div className="border-y border-dashed border-slate-800 py-4 space-y-2">
                       {group.items.map((item, idx) => (
                         <div key={idx} className="space-y-1">
                           <div className="flex justify-between text-sm">

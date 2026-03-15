@@ -37,17 +37,42 @@ export interface Employee {
   createdAt: string;
 }
 
+export interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  category: string;
+  timestamp: string;
+  synced: number;
+}
+
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+}
+
+export interface ProductCategory {
+  id: string;
+  name: string;
+}
+
 export class SyncPOSDatabase extends Dexie {
   transactions!: Table<Transaction>;
   products!: Table<Product>;
   employees!: Table<Employee>;
+  expenses!: Table<Expense>;
+  expenseCategories!: Table<ExpenseCategory>;
+  productCategories!: Table<ProductCategory>;
 
   constructor() {
     super('SyncPOSDB');
-    this.version(7).stores({
+    this.version(10).stores({
       transactions: 'id, session_id, timestamp, synced',
       products: 'id, name, category, barcode',
-      employees: 'id, name, role, pin'
+      employees: 'id, name, role, pin',
+      expenses: 'id, category, timestamp, synced',
+      expenseCategories: 'id, name',
+      productCategories: 'id, name'
     });
   }
 }
